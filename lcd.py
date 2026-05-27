@@ -76,6 +76,8 @@ LCD_HEIGHT = 64
 LCD_PAGES = 8
 LCD_FB_SIZE = LCD_WIDTH * LCD_HEIGHT // 8  # 1024 bytes
 
+FONT = ImageFont.load_default()
+
 # ioctl constants for /dev/lcm (ums8485md / lpc-ich legacy interface)
 # _IOWR(0xF4, 0, lcm_member_t) where lcm_member_t = 144 bytes
 IOCTL_DISPLAY_COMMAND = (3 << 30) | (144 << 16) | (0xF4 << 8) | 0  # 0xC090F400
@@ -406,14 +408,16 @@ def get_cpu_temp():
     return 0
 
 
-def get_fan_speed():
+def get_fan_speeds():
     import glob
+    speeds = []
     for path in sorted(glob.glob('/sys/class/hwmon/hwmon*')):
-        for fan in sorted(glob.glob(os.path.join(path, 'fan*_input'))):
-            val = read_sensor(fan)
-            if val != "0":
-                return int(val)
-    return 0
+        for pattern in ['fan*_input', 'device/fan*_input']:
+            for fan in sorted(glob.glob(os.path.join(path, pattern))):
+                val = int(read_sensor(fan))
+                if val > 0:
+                    speeds.append(val)
+    return speeds
 
 
 def get_drive_temps():
@@ -434,28 +438,28 @@ def read_fanmode():
 
 def display_home(backend):
     try:
-        im = Image.new(mode="L", size=(LCD_WIDTH, LCD_HEIGHT))
+        im = Image.new(mode="1", size=(LCD_WIDTH, LCD_HEIGHT), color=0)
         drw = ImageDraw.Draw(im)
-        drw.text((0, 0), "Hostname: " + socket.gethostname(), fill='white')
-        drw.text((0, 10), "IP: " + get_local_ip(), fill='white')
+        f = FONT
+        lh = 10
 
         cpu_temp = get_cpu_temp()
-        drw.text((0, 20), f"CPU Temp: {cpu_temp:.1f} C", fill='white')
-
         hd_temps = get_drive_temps()
-        if hd_temps:
-            drw.text((0, 30), "HDs Temp: " + " ".join(str(t) for t in hd_temps), fill='white')
-        else:
-            drw.text((0, 30), "HDs Temp: N/A", fill='white')
-
-        fan_speed = get_fan_speed()
+        fans = get_fan_speeds()
         mode = read_fanmode()
-        if fan_speed:
-            drw.text((0, 40), f"Fan {mode}: {fan_speed} rpm", fill='white')
-        else:
-            drw.text((0, 40), f"Fan: no sensor", fill='white')
 
-        drw.text((0, 50), f"CPU: {int(cpu_usage())}%   RAM: {int(memory_usage())}%", fill='white')
+        drw.text((0, 0), "Host: " + socket.gethostname(), font=f, fill=1)
+        drw.text((0, lh), "IP: " + get_local_ip(), font=f, fill=1)
+        drw.text((0, lh * 2), f"CPU: {cpu_temp:.0f}C", font=f, fill=1)
+        if hd_temps:
+            drw.text((0, lh * 3), "HDD: " + " ".join(str(t) for t in hd_temps) + "C", font=f, fill=1)
+        else:
+            drw.text((0, lh * 3), "HDD: N/A", font=f, fill=1)
+        if fans:
+            drw.text((0, lh * 4), "Fan: " + " ".join(str(r) for r in fans) + " " + mode, font=f, fill=1)
+        else:
+            drw.text((0, lh * 4), "Fan: no sensor", font=f, fill=1)
+        drw.text((0, lh * 5), f"CPU:{int(cpu_usage())}%  RAM:{int(memory_usage())}%", font=f, fill=1)
 
         backend.write_image(im)
     except Exception as e:
@@ -491,39 +495,40 @@ def display_disk_usage(backend):
         disk_usage2 = psutil.disk_usage(mountpoint2)
         disk_usage3 = psutil.disk_usage(mountpoint3)
 
-        image = Image.new(mode="L", size=(LCD_WIDTH, LCD_HEIGHT))
+        image = Image.new(mode="1", size=(LCD_WIDTH, LCD_HEIGHT), color=0)
         draw = ImageDraw.Draw(image)
+        f = FONT
 
         bbox1 = [2, 2, 41, 41]
         bbox2 = [44, 2, 83, 41]
         bbox3 = [86, 2, 125, 41]
 
-        draw.ellipse(bbox1, outline='white')
-        draw.ellipse(bbox2, outline='white')
-        draw.ellipse(bbox3, outline='white')
+        draw.ellipse(bbox1, outline=1)
+        draw.ellipse(bbox2, outline=1)
+        draw.ellipse(bbox3, outline=1)
 
-        end_angle1 = int(360 * (disk_usage1.percent / 100))
-        end_angle2 = int(360 * (disk_usage2.percent / 100))
-        end_angle3 = int(360 * (disk_usage3.percent / 100))
+        for usage, bbox in [(disk_usage1, bbox1), (disk_usage2, bbox2), (disk_usage3, bbox3)]:
+            angle = int(360 * (usage.percent / 100))
+            if angle > 0:
+                draw.pieslice(bbox, start=0, end=angle, fill=1)
 
-        draw.pieslice(bbox1, start=0, end=end_angle1, fill='white')
-        draw.pieslice(bbox2, start=0, end=end_angle2, fill='white')
-        draw.pieslice(bbox3, start=0, end=end_angle3, fill='white')
-
-        draw.text((0 + (42 - draw.textlength(mountpoint1)) / 2, 43), mountpoint1, fill='white')
-        draw.text((44 + (42 - draw.textlength(mountpoint2)) / 2, 43), mountpoint2, fill='white')
-        draw.text((86 + (42 - draw.textlength(mountpoint3)) / 2, 43), mountpoint3, fill='white')
-
-        for idx, (usage, offset) in enumerate([(disk_usage1, 0), (disk_usage2, 44), (disk_usage3, 86)]):
-            pct = str(int(usage.percent)) + '%'
+        for usage, offset in [(disk_usage1, 0), (disk_usage2, 44), (disk_usage3, 86)]:
+            pct = f"{int(usage.percent)}%"
+            tw = draw.textlength(pct, font=f)
             y_pos = 10 if usage.percent < 50 else 23
-            color = 'white' if usage.percent < 50 else 'black'
-            draw.text((offset + (42 - draw.textlength(pct)) / 2, y_pos), pct, fill=color)
+            color = 1 if usage.percent < 50 else 0
+            draw.text((offset + (42 - tw) / 2, y_pos), pct, font=f, fill=color)
+
+        for mp, offset in [(mountpoint1, 0), (mountpoint2, 44), (mountpoint3, 86)]:
+            tw = draw.textlength(mp, font=f)
+            draw.text((offset + (42 - tw) / 2, 43), mp, font=f, fill=1)
 
         status = get_md_array_status('md0')
-        draw.text((44 + (42 - draw.textlength(status)) / 2, 53), status, fill='white')
+        tw = draw.textlength(status, font=f)
+        draw.text((44 + (42 - tw) / 2, 53), status, font=f, fill=1)
         status = get_md_array_status('md1')
-        draw.text((86 + (42 - draw.textlength(status)) / 2, 53), status, fill='white')
+        tw = draw.textlength(status, font=f)
+        draw.text((86 + (42 - tw) / 2, 53), status, font=f, fill=1)
 
         backend.write_image(image)
     except Exception as e:
