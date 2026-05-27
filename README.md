@@ -1,4 +1,4 @@
-# LenovoEMC-300d
+# LenovoEMC PX4-300d
 
 Kernel drivers and userspace tools for the Iomega / Lenovo EMC StorCenter PX4-300d and PX6-300d NAS front-panel LCD and hardware support.
 
@@ -30,12 +30,23 @@ for LCD operation.
 | | lpc_ich_lenovo.ko | ums8485md.ko |
 |---|---|---|
 | Interface | `/dev/fb*` + `/dev/lcm` | `/dev/lcm` only |
-| LCD init | Synchronous at probe | Immediate at load |
+| LCD init | Deferred (15s workqueue) | Immediate at load |
 | Extra features | MFD (watchdog, GPIO, SPI), framebuffer | LCD only |
 | Best for | Production use with lcd.py | Simple testing |
 
 `lpc_ich_lenovo` is the preferred module — it provides a standard Linux framebuffer
 plus the legacy ioctl interface for backward compatibility.
+
+### Module Parameters (lpc_ich_lenovo)
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `lcd_enable` | bool | true | Enable LCD framebuffer |
+| `lcd_contrast` | int | 23 | LCD contrast 0–63 |
+| `lcd_refresh_ms` | int | 200 | LCD refresh interval in ms |
+| `lcd_init_delay_ms` | int | 15000 | Delay before LCD init (ms) — avoids `register_framebuffer` deadlock during early boot |
+
+Example: `sudo insmod lpc_ich_lenovo.ko lcd_contrast=30 lcd_init_delay_ms=10000`
 
 ## Building
 
@@ -120,6 +131,11 @@ sudo cp lpc_ich_lenovo.ko /lib/modules/$(uname -r)/extra/
 sudo cp gpio-f7188x.ko /lib/modules/$(uname -r)/extra/    # optional, for LEDs
 sudo depmod -a
 
+# Block the in-tree lpc_ich from claiming the LPC bridge
+# ("blacklist lpc_ich" alone is insufficient — the module still loads via PCI alias)
+echo "install lpc_ich /bin/false" | sudo tee /etc/modprobe.d/blacklist-lpc_ich.conf
+sudo update-initramfs -u
+
 # Create modprobe config so they load at boot
 echo "lpc_ich_lenovo" | sudo tee /etc/modules-load.d/lpc_ich_lenovo.conf
 # Optional — for status LEDs:
@@ -137,7 +153,7 @@ Description=Front-panel LCD status display
 After=multi-user.target
 
 [Service]
-ExecStart=/usr/bin/python3 /opt/lcd.py
+ExecStart=/usr/bin/python3 /path/to/lcd.py
 Restart=on-failure
 RestartSec=5
 
@@ -186,18 +202,19 @@ sudo python3 lcd.py
 
 Root is required for `/dev/fb*`, `/dev/lcm`, and `/dev/port` (button polling) access.
 
-The script auto-detects the backend:
+The script waits up to 60 seconds for the LCD kernel module to create its device
+node, then auto-detects the backend:
 
 | Device exists | Backend | Driver |
 |---|---|---|
 | `/dev/fb*` (px300d_lcd) | FramebufferBackend | lpc_ich_lenovo |
 | `/dev/lcm` only | IoctlBackend | ums8485md or lpc_ich_lenovo |
-| Neither | Exits with error | — |
+| Neither after 60s | Exits with error | — |
 
 ### Display Screens
 
 1. **Boot logo** — shown for 5 seconds at startup
-2. **System Status** — hostname, IP, CPU temp, HD temps, fan speed, CPU/RAM usage
+2. **System Status** — hostname, IP, CPU temp, HD temps, fan speeds (all detected fans), CPU/RAM usage
 3. **Disk Usage** (requires psutil) — pie charts for mounted filesystems, RAID status
 
 ### Front-Panel Button Controls
@@ -208,7 +225,7 @@ Buttons are polled via ICH9 GPIO pins 4 (SELECT) and 5 (SCROLL) through `/dev/po
 |---|---|
 | Short press SELECT | Next screen |
 | Long press SELECT (>2s) | Cycle LCD backlight |
-| Short press SCROLL | Previous screen |
+| Short press SCROLL | First screen (home) |
 
 ## lcd_diag.py — Hardware Diagnostic
 
