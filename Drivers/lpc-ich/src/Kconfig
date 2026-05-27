@@ -1,0 +1,19 @@
+config LPC_ICH_LENOVO
+	tristate "Intel ICH LPC - Lenovo EMC PX-300d"
+	depends on PCI
+	depends on FB
+	select MFD_CORE
+	select FB_SYS_FILLRECT
+	select FB_SYS_COPYAREA
+	select FB_SYS_IMAGEBLIT
+	select FB_SYS_FOPS
+	help
+	  The LPC bridge function of the Intel ICH provides support for
+	  many functional units. This driver provides needed support for
+	  other drivers to control these functions, currently GPIO and
+	  watchdog.
+
+	  On the Lenovo EMC StorCenter PX-300d, this driver also provides
+	  a framebuffer (/dev/fb*) and legacy ioctl (/dev/lcm) interface
+	  for the front-panel 128x64 ST7565R monochrome LCD connected via
+	  SPI bit-banged over Fintek F7188x Super I/O GPIOs.

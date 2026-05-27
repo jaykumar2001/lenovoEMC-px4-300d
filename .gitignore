@@ -1,0 +1,17 @@
+.idea
+
+# Kernel build artifacts
+*.o
+*.ko
+*.mod
+*.mod.c
+*.mod.o
+.*.cmd
+Module.symvers
+modules.order
+.module-common.o
+.tmp_versions/
+
+# Python
+__pycache__/
+*.pyc
