@@ -43,10 +43,10 @@ plus the legacy ioctl interface for backward compatibility.
 
 ```bash
 cd ~/openwrt/package
-git clone https://github.com/arvati/lenovoEMC-300d.git
+git clone https://github.com/jaykumar2001/lenovoEMC-px4-300d.git
 cd ../..
 make menuconfig   # Select packages under Kernel modules
-make package/lenovoEMC-300d/{compile,install}
+make package/lenovoEMC-px4-300d/{compile,install}
 ```
 
 ### Option 2: Build Against Running Kernel (recommended for Proxmox / Debian)
@@ -107,6 +107,46 @@ scp Drivers/lpc-ich/src/lpc_ich_lenovo.ko user@nas:/tmp/
 sudo insmod /tmp/lpc_ich_lenovo.ko
 # OR
 sudo insmod /tmp/ums8485md.ko
+```
+
+### Auto-Load on Boot
+
+To load the modules automatically after every reboot, install them into the kernel
+module tree and configure modprobe:
+
+```bash
+# Install the .ko files (run on the NAS after building)
+sudo cp lpc_ich_lenovo.ko /lib/modules/$(uname -r)/extra/
+sudo cp gpio-f7188x.ko /lib/modules/$(uname -r)/extra/    # optional, for LEDs
+sudo depmod -a
+
+# Create modprobe config so they load at boot
+echo "lpc_ich_lenovo" | sudo tee /etc/modules-load.d/lpc_ich_lenovo.conf
+# Optional — for status LEDs:
+echo "gpio-f7188x" | sudo tee /etc/modules-load.d/gpio-f7188x.conf
+```
+
+After reboot, verify with `lsmod | grep lpc_ich_lenovo`.
+
+To also start `lcd.py` at boot, create a systemd service:
+
+```bash
+sudo tee /etc/systemd/system/lcd-display.service <<'EOF'
+[Unit]
+Description=Front-panel LCD status display
+After=multi-user.target
+
+[Service]
+ExecStart=/usr/bin/python3 /opt/lcd.py
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+sudo systemctl daemon-reload
+sudo systemctl enable lcd-display
 ```
 
 ### Verifying
@@ -203,9 +243,13 @@ sudo insmod gpio-f7188x.ko
 
 ## Reference
 
-`px4px6.patch` contains the original OEM kernel patches for the PX4/PX6 300d firmware,
-including the ICH9 GPIO driver, LCD driver, and Super I/O configuration. Kept as a
-hardware reference document.
+- **[arvati/lenovoEMC-300d](https://github.com/arvati/lenovoEMC-300d)** — Original OpenWrt
+  package feed for these NAS devices by [@arvati](https://github.com/arvati). This repo
+  is based on that work. Thanks to arvati for the initial driver packaging, OpenWrt
+  integration, and hardware documentation that made this project possible.
+- **`px4px6.patch`** — Original OEM kernel patches from the PX4/PX6 300d firmware,
+  including the ICH9 GPIO driver, LCD driver, and Super I/O configuration. Kept as a
+  hardware reference document.
 
 ## License
 

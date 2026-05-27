@@ -18,10 +18,10 @@ Kernel drivers and userspace tools for Lenovo EMC (Iomega) StorCenter PX4-300d /
 ### OpenWrt Integration (primary build path)
 ```bash
 cd ~/openwrt/package
-git clone https://github.com/arvati/lenovoEMC-300d.git
+git clone https://github.com/jaykumar2001/lenovoEMC-px4-300d.git
 cd ~/openwrt
 make menuconfig   # select desired packages
-make package/lenovoEMC-300d/{compile,install}
+make package/lenovoEMC-px4-300d/{compile,install}
 ```
 
 ### Standalone Out-of-Tree Kernel Module Build
