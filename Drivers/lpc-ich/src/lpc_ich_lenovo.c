@@ -154,6 +154,7 @@ struct px300d_lcd {
 	struct mutex lock;
 	struct delayed_work refresh_work;
 	bool active;
+	bool lcm_registered;
 };
 
 static struct px300d_lcd *px300d_lcd_dev;
@@ -1215,6 +1216,8 @@ static int lcd_try_init(void)
 	ret = misc_register(&lcm_misc);
 	if (ret)
 		pr_warn("lcd: misc_register failed: %d (continuing)\n", ret);
+	else
+		lcd->lcm_registered = true;
 
 	lcd->active = true;
 	px300d_lcd_dev = lcd;
@@ -1246,7 +1249,8 @@ static void lcd_cleanup(void)
 	lcd->active = false;
 	cancel_delayed_work_sync(&lcd->refresh_work);
 
-	misc_deregister(&lcm_misc);
+	if (lcd->lcm_registered)
+		misc_deregister(&lcm_misc);
 
 	if (lcd->fb_info) {
 		unregister_framebuffer(lcd->fb_info);

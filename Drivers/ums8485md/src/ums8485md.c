@@ -9,6 +9,7 @@
 #include <linux/uaccess.h>
 #include <linux/delay.h>
 #include <linux/miscdevice.h>
+#include <linux/mutex.h>
 #include <linux/io.h>
 #include "ums8485md.h"
 #include "ilogo.h"
@@ -41,6 +42,7 @@ static long lcm_ioctl(struct file *file, unsigned int cmd, unsigned long arg);
 
 static int lcm_initdata[] = { 0xa0, 0x2f, 0xa2, 0xc8, 0x27, 0x81, 0x17, 0xaf };
 
+static DEFINE_MUTEX(lcm_lock);
 static u32 gpio_base;
 
 static inline void lcd_pin_set(u32 pin_mask, int value)
@@ -99,7 +101,7 @@ static int write_lcm(lcm_member_t buf)
 		write_lcm_data(LCM_CONTROL_DATA, (0x0f & buf.column));
 		write_lcm_data(LCM_CONTROL_DATA, (0x10 | (0x0f & buf.column >> 4)));
 	if(buf.ctrl != WIX_LCM_CMD_RESET) {
-	for(i = 0; i < buf.size; i++)
+	for(i = 0; i < buf.size && i < 128; i++)
 		write_lcm_data(LCM_DISPLAY_DATA, buf.data[i]);
 	}
 
@@ -189,11 +191,13 @@ static long lcm_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 	}
 
 	if(data_check(info))
-		return -EFAULT;
+		return -EINVAL;
 
 #ifdef UMS_DEBUG
 	data_dump(info);
 #endif
+	mutex_lock(&lcm_lock);
+
 	switch(cmd) {
 		case IOCTL_DISPLAY_COMMAND :
 			write_lcm(info);
@@ -202,6 +206,8 @@ static long lcm_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 			pr_info("[%s]->[%s] Unknown IOCTL command\n", DRV_NAME, __func__);
 			break;
 	};
+
+	mutex_unlock(&lcm_lock);
 
 	return 0;
 }
@@ -214,7 +220,7 @@ static int lcm_close(struct inode * inode, struct file * file)
 static struct file_operations lcm_fops = {
 	.owner	= THIS_MODULE,
 	.unlocked_ioctl	= lcm_ioctl,
-	.compat_ioctl	= lcm_ioctl,
+	.compat_ioctl	= compat_ptr_ioctl,
 	.open		= lcm_open,
 	.release	= lcm_close
 };
