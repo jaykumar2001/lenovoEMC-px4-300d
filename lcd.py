@@ -266,24 +266,33 @@ def find_lcd_framebuffer():
     return None
 
 
-def detect_backend():
-    fb_path = find_lcd_framebuffer()
-    if fb_path:
-        try:
-            b = FramebufferBackend(fb_path)
-            b.open()
-            print(f"Using framebuffer backend: {fb_path}")
-            return b
-        except OSError:
-            pass
-    if os.path.exists('/dev/lcm'):
-        try:
-            b = IoctlBackend('/dev/lcm')
-            b.open()
-            print("Using ioctl backend: /dev/lcm")
-            return b
-        except OSError:
-            pass
+def detect_backend(timeout=60):
+    deadline = time.time() + timeout
+    attempt = 0
+    while True:
+        fb_path = find_lcd_framebuffer()
+        if fb_path:
+            try:
+                b = FramebufferBackend(fb_path)
+                b.open()
+                print(f"Using framebuffer backend: {fb_path}")
+                return b
+            except OSError:
+                pass
+        if os.path.exists('/dev/lcm'):
+            try:
+                b = IoctlBackend('/dev/lcm')
+                b.open()
+                print("Using ioctl backend: /dev/lcm")
+                return b
+            except OSError:
+                pass
+        if time.time() >= deadline:
+            break
+        attempt += 1
+        if attempt == 1:
+            print("Waiting for LCD kernel module...", flush=True)
+        time.sleep(2)
     print("ERROR: No LCD device found (px300d-lcd fb or /dev/lcm)", file=sys.stderr)
     sys.exit(1)
 

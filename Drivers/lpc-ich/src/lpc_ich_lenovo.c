@@ -142,6 +142,10 @@ static int lcd_refresh_ms = 200;
 module_param(lcd_refresh_ms, int, 0644);
 MODULE_PARM_DESC(lcd_refresh_ms, "LCD refresh interval in ms (default: 200)");
 
+static int lcd_init_delay_ms = 15000;
+module_param(lcd_init_delay_ms, int, 0444);
+MODULE_PARM_DESC(lcd_init_delay_ms, "LCD init delay in ms (default: 15000)");
+
 /* ================================================================
  * LCD device structure
  * ================================================================ */
@@ -935,14 +939,17 @@ static void lcd_hw_init(struct px300d_lcd *lcd)
 	u32 use_sel, io_sel;
 	int i;
 
-	/* Configure all LCD pins as GPIO output */
+	pr_info("lcd: hw_init: configuring GPIO pins\n");
+
 	use_sel = inl(lcd->gpio_base + ICH9_GPIO_USE_SEL);
+	pr_info("lcd: hw_init: USE_SEL=0x%08x\n", use_sel);
 	outl(use_sel | LCD_ALL_PINS, lcd->gpio_base + ICH9_GPIO_USE_SEL);
 
 	io_sel = inl(lcd->gpio_base + ICH9_GP_IO_SEL);
+	pr_info("lcd: hw_init: IO_SEL=0x%08x\n", io_sel);
 	outl(io_sel & ~LCD_ALL_PINS, lcd->gpio_base + ICH9_GP_IO_SEL);
 
-	/* All pins low, then RS reset pulse */
+	pr_info("lcd: hw_init: RS reset pulse\n");
 	lcd_pin_set(lcd, LCD_ALL_PINS, 0);
 	lcd_pin_set(lcd, LCD_BIT_RS, 0);
 	msleep(200);
@@ -951,11 +958,13 @@ static void lcd_hw_init(struct px300d_lcd *lcd)
 	lcd_pin_set(lcd, LCD_BIT_CS1, 1);
 	lcd_pin_set(lcd, LCD_BIT_SCL, 1);
 
+	pr_info("lcd: hw_init: sending init commands\n");
 	for (i = 0; i < ARRAY_SIZE(lcd_initdata); i++)
 		lcd_write_cmd(lcd, lcd_initdata[i]);
 
 	lcd_write_cmd(lcd, 0x81);
 	lcd_write_cmd(lcd, lcd_contrast & 0x3f);
+	pr_info("lcd: hw_init: done\n");
 }
 
 static void lcd_clear_display(struct px300d_lcd *lcd)
@@ -1180,8 +1189,11 @@ static int lcd_try_init(void)
 	lcd->gpio_base = ich9_gpio_base;
 	mutex_init(&lcd->lock);
 
+	pr_info("lcd: starting hw_init\n");
 	lcd_hw_init(lcd);
+	pr_info("lcd: starting clear_display\n");
 	lcd_clear_display(lcd);
+	pr_info("lcd: registering framebuffer\n");
 
 	info = framebuffer_alloc(0, NULL);
 	if (!info) {
@@ -1702,6 +1714,19 @@ static struct pci_driver lpc_ich_driver = {
  * Module init / exit
  * ================================================================ */
 
+static struct delayed_work lcd_deferred_init_work;
+
+static void lcd_deferred_init_fn(struct work_struct *work)
+{
+	int ret;
+
+	pr_info("PX-300d detected, initializing LCD (GPIOBASE=0x%04x)\n",
+		ich9_gpio_base);
+	ret = lcd_try_init();
+	if (ret)
+		pr_err("lcd: initialization failed: %d\n", ret);
+}
+
 static int __init lpc_ich_lenovo_init(void)
 {
 	int ret;
@@ -1713,11 +1738,11 @@ static int __init lpc_ich_lenovo_init(void)
 	px300d_detected = dmi_match(DMI_BOARD_NAME, "StorCenter Pro xxxx");
 
 	if (px300d_detected && lcd_enable && ich9_gpio_base) {
-		pr_info("PX-300d detected, initializing LCD (GPIOBASE=0x%04x)\n",
-			ich9_gpio_base);
-		ret = lcd_try_init();
-		if (ret)
-			pr_err("lcd: initialization failed: %d\n", ret);
+		pr_info("PX-300d detected, scheduling LCD init\n");
+		INIT_DELAYED_WORK(&lcd_deferred_init_work,
+				  lcd_deferred_init_fn);
+		schedule_delayed_work(&lcd_deferred_init_work,
+				      msecs_to_jiffies(lcd_init_delay_ms));
 	}
 
 	return 0;
@@ -1725,6 +1750,7 @@ static int __init lpc_ich_lenovo_init(void)
 
 static void __exit lpc_ich_lenovo_exit(void)
 {
+	cancel_delayed_work_sync(&lcd_deferred_init_work);
 	lcd_cleanup();
 	pci_unregister_driver(&lpc_ich_driver);
 }
