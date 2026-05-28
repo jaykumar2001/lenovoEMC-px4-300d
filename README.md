@@ -1,5 +1,5 @@
-<img width="4080" height="3072" alt="IMG_20260528_115628953" src="https://github.com/user-attachments/assets/413dcec7-a188-4e0c-bcde-56fd8bec3551" />
-<img width="4080" height="3072" alt="IMG_20260528_115638640" src="https://github.com/user-attachments/assets/67033ef3-59fb-4a42-a11b-40371a24b909" />
+<img width="1000" height="500" alt="IMG_20260528_115628953" src="https://github.com/user-attachments/assets/413dcec7-a188-4e0c-bcde-56fd8bec3551" />
+<img width="1000" height="500" alt="IMG_20260528_115638640" src="https://github.com/user-attachments/assets/67033ef3-59fb-4a42-a11b-40371a24b909" />
 
 # LenovoEMC PX4-300d
 
